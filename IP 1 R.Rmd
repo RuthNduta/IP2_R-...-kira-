@@ -1,0 +1,324 @@
+---
+title: "Analysis using Decision Tree Classification in R"
+author: "Muriithi Nduta Ruth (MR. N)"
+
+output: html_document
+---
+# Research Question
+```
+A Kenyan entrepreneur has created an online cryptography course and would want to advertise it on her blog. She currently targets audiences originating from various countries. In the past, she ran ads to advertise a related course on the same blog and collected data in the process. She would now like to employ your services as a Data Science Consultant to help her identify which individuals are most likely to click on her ads. 
+
+```
+## 1. Defining the Question 
+
+#### 1.1 Specifying the data analytic objective
+
+> Our main aim is to do thorough exploratory data analysis for univariate and bivariate data and come up with recommendations for our client.
+
+#### 1.2 Defining the metric for success
+
+> We aim to build elaborate visualizations for univariate and bivariate  analysis
+
+#### 1.3 Recording the Experimental Design
+
+> 1. Loading the data
+2. Checking the data
+3. Tidying the data
+4. Univariate Analysis
+5. Bivariate Analysis
+6. Challenging the solution
+7. Recommendations
+8. Follow up questions
+
+#### 1.4 Data Relevance
+
+> The data provided was relevant for our analysis.
+
+
+## 2.Loading and reading Our Datasets
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+ads <- read.csv("~/moringa-school-projects/RYouWithMe/advertising.csv")
+view(ads)
+```
+
+*Checking the data summary* 
+```{r}
+summary(ads)
+```
+From the table above, we can see all our measures of central tendency (median, mean).
+
+*Checking top and bottom rows and columns*
+```{r}
+tail(ads)
+```
+```{r}
+head(ads)
+```
+
+*Checking the classes*
+```{r}
+class(ads)
+```
+*Checking the number of rows and in our dataset*
+```{r}
+cat("Rows in dataset:", nrow(ads), "\nCols in dataset:", ncol(ads))
+cat("\nThe dimension of the dataset is:", dim(ads))
+```
+*Range of Time Spent on Site by users*
+
+```{r}
+site.time.range <- range(ads$Daily.Time.Spent.on.Site)
+cat("The Range of Time Spent on Site by users is:",site.time.range)
+```
+*Range of Daily Internet Usage*
+
+```{r}
+internet.time.range <- range(ads$Daily.Internet.Usage)
+cat("The Range of Daily Internet Usage is:", internet.time.range)
+```
+*Range of Age*
+```{r}
+age.range <- range(ads$Age)
+cat("The Range of Users' age is:",age.range)
+```
+*Range of Income*
+```{r}
+income.range <- range(ads$Area.Income)
+cat("The Range of Users' income is:",income.range)
+```
+
+*Structure of our dataframe*
+```{r}
+str(ads)
+```
+Our dataset is of type dataframe, with 1000 records and 10 variables. 3 variables of tye numeric, 3 integer types, 4 character types including the date and time which will be converted to the standard format.
+
+*Converting the date and time*
+
+The time looks like a character string when you display it, but its data type.
+It should be in the class "POSIXct" "POSIXt" (it has two classes).
+```{r}
+class(ads$Timestamp)
+```
+
+```{r}
+ads$Timestamp <- strptime(paste( ads$Timestamp), format = "%Y-%m-%d %H:%M:%S",tz="UTC") 
+class(ads$Timestamp)
+```
+*Checking for outliers on the numerical columns using boxplots*
+
+
+```{r}
+boxplot(ads$Area.Income)
+boxplot(ads$Daily.Time.Spent.on.Site)
+boxplot(ads$Age)
+boxplot(ads$Daily.Internet.Usage)
+```
+Only one variable had outliers, Area.Income.
+
+*Removing outliers;*
+
+We'll remove outliers by limiting extreme values in the statistical data to reduce the effect of possibly spurious outliers.
+
+```{r}
+bench <- 47032 - 1.5 * IQR(ads$Area.Income) 
+ads$Area.Income[ads$Area.Income < bench]<- bench
+
+boxplot(ads$Area.Income)
+```
+The boxplot shows that the outliers in that column have been removed.
+
+*Checking for duplicates*
+
+```{r}
+sum(duplicated(ads))
+
+```
+There are no duplicates in our data
+
+*Checking for missing values*
+```{r}
+colSums(is.na(ads))
+```
+The dataset has no missing values in any of the columns.
+
+# Exploratory Data Analysis
+
+```{r}
+install.packages("dataMaid", repos = "http://cran.us.r-project.org")
+install.packages("inspectdf", repos = "http://cran.us.r-project.org")
+
+```
+*Calling the libraries*
+```{r}
+library(dplyr)
+library(inspectdf)
+```
+The 2 packages will give us more insights on our data.
+
+```{r}
+inspect_cat(ads)
+
+```
+**common_pcnt**, the percentage of each column occupied by the most common level shown in **common.**
+
+## Bivariate Analysis visualization
+
+
+Here we check for correlation between the different columns and the target variable Clicked.On.Ad.
+
+```{r}
+inspect_cor(ads, df2 = NULL, method = "pearson", with_col = 'Clicked.on.Ad', alpha = 0.05)
+
+```
+The summary above covers  Pearson’s correlation coefficients for all the numeric columns, compared against the *Clicked.On.Ads* column. 
+
+Across the board, we can see that there are negative correlation values for *Daily.Internet.Usage*, *Daily.Time.Spent.on.Site*, *Area Income*. The only positive correlation is between *Clicked.On.Ad* and *Age*.
+
+```{r}
+inspect_cor(ads, df2 = NULL, method = "pearson", alpha = 0.05)
+```
+```{r}
+install.packages("PerformanceAnalytics")
+install.packages("corrplot")
+```
+```{r}
+library(corrplot)
+ads_num <- Filter(is.numeric, ads)
+corrplot(cor(ads_num))
+```
+The *Daily internet usage* and *Daily time spent on the site* columns have a large positive correlation and so does the *Clicked.On.Ad* and *age columns*.
+
+We plan on using the *Clicked.On.Ad* feature to determine fill colors for these graphs, but that won't work if they stay as they're currently set (integer data type). I'll change that in the following code chunk.
+
+```{r}
+library(ggplot2)
+
+ggplot(data = ads, aes(x = Age, fill = Clicked.on.Ad))+
+    geom_histogram(bins = 27, color = 'cyan') + 
+    labs(title = 'Age distribution with Ad clicks', x = 'Age', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set2') 
+      
+```
+
+**Income and Click on Ad distribution**
+```{r}
+ggplot(data = ads, aes(x = Area.Income, fill = Clicked.on.Ad))+
+    geom_histogram(bins = 20, color = 'cyan') + 
+    labs(title = 'Income distribution', x = 'Income', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set1') 
+        
+```
+**Daily Internet Use and the clicked on ad relationship**
+
+```{r}
+ggplot(data = ads, aes(x = Daily.Internet.Usage, fill = Clicked.on.Ad))+
+    geom_histogram(bins = 35, color = 'cyan') + 
+    labs(title = 'Daily Internet Use distribution', x = 'Daily Internet Usage (minutes)', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set1')
+```
+
+**Daily Time Spent on Site and the clicked on ad relationship**
+```{r}
+
+ggplot(data = ads, aes(x = Daily.Time.Spent.on.Site, fill = Clicked.on.Ad))+
+    geom_histogram(bins = 25, color = 'cyan') + 
+    labs(title = 'Daily Time Spent On Site', x = 'Time Spent(minutes)', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set1') 
+
+
+
+```
+
+**Daily Time Spent on Site and the Income relationship**
+```{r}
+ggplot(data = ads, aes(x =Area.Income , fill = Daily.Time.Spent.on.Site))+
+    geom_histogram(bins = 30, color = 'cyan') + 
+    labs(title = 'Daily Time Spent On Site vs Income', x = 'Income', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set1') 
+
+```
+
+**Daily Time Spent on Site and the Users' Age relationship**
+```{r}
+ggplot(data = ads, aes(x =Age , fill = Daily.Time.Spent.on.Site))+
+    geom_histogram(bins = 30, color = 'cyan') + 
+    labs(title = 'Daily Time Spent On Site vs Age', x = 'Age', y = 'Frequency', fill = 'Clicked.on.Ad') +
+        scale_color_brewer(palette = 'Set1') 
+```
+
+
+**Daily Internet Usage per Country**
+```{r}
+ads %>% group_by(Country, Daily.Internet.Usage)%>% head(10)%>% arrange(desc(Daily.Internet.Usage))
+```
+
+
+**Daily Time Spent on Site per Country**
+```{r}
+ads %>% group_by(Country, Daily.Time.Spent.on.Site)%>% head(10)%>% arrange(desc(Daily.Time.Spent.on.Site))
+```
+
+I'll use the decision tree to do classification.
+
+*Modelling*
+
+```{r}
+# dropping irrelevant columns
+mod_ads <- subset(ads, select = -c(Timestamp, Country, City, Ad.Topic.Line) )
+mod_ads
+```
+
+*Decision trees*
+
+```{r}
+#data splicing
+set.seed(12345)
+train <- sample(1:nrow(mod_ads),size = ceiling(0.80*nrow(mod_ads)),replace = FALSE)
+# training set
+mod_ads_train <- mod_ads[train,]
+# test set
+mod_ads_test <- mod_ads[-train,]
+```
+
+
+```{r}
+# building the classification tree with rpart
+library(rpart)
+
+tree <- rpart(Clicked.on.Ad~.,
+data=mod_ads_train,
+method = "class")
+```
+
+```{r}
+# Visualize the decision tree with rpart.plot
+library(rpart.plot)
+
+rpart.plot(tree, nn=TRUE)
+```
+
+```{r}
+#Testing the model
+
+pred <- predict(object = tree,  
+                            newdata = mod_ads_test,   
+                            type = "class")
+```
+
+```{r}
+#Calculating accuracy
+library(caret)
+conf.ads <- confusionMatrix(data = pred,
+                reference = pred)
+conf.ads
+```
+
+The output shows that all the samples in the test dataset have been correctly classified and we’ve attained an accuracy of 100% on the test data set with a 95% confidence interval (0.9817, 1). 
+
+Class 0 on clicking on ads takes the day. 
