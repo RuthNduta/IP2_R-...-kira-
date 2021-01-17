@@ -1,0 +1,286 @@
+---
+title: "IP 2 R"
+author: "Ruth Muriithi"
+date: "1/15/2021"
+output: html_document
+---
+
+#Problem Definition
+```
+Kira Plastinina is a fashion retail store. The brand's Sales and Marketing team would like to understand their customer’s behavior from data that they have collected over the past year. More specifically, they would like to learn the characteristics of customer groups.
+```
+#Data Sourcing
+
+We are provided with a link for the dataset.
+
+```{r}
+mydata <- read.csv("http://bit.ly/EcommerceCustomersDataset")
+head(mydata)
+```
+#Check the Data
+
+```{r}
+library(tidyverse)
+str(mydata)
+```
+We have 7 integer variables, 7 numeric, 2 character values and 2 logical variables
+
+```{r}
+summary(mydata)
+```
+*Checking the number of rows and in our dataset*
+```{r}
+cat("Rows in dataset:", nrow(mydata), "\nCols in dataset:", ncol(mydata))
+cat("\nThe dimension of the dataset is:", dim(mydata))
+```
+#Perform Data Cleaning
+
+*checking for duplicates*
+```{r}
+sum(duplicated(mydata))
+```
+There are 119 duplicated values. We are going to drop duplicates.
+
+```{r}
+mydata <- mydata[!duplicated(mydata), ]
+sum(duplicated(mydata))
+```
+*Checking for missing values*
+```{r}
+cat("\n the columns with missing data are:",colSums(is.na(mydata)))
+```
+8 out of 18 columns have missing values. I will use the MICE package to impute the missing data in the columns.
+
+*Checking to see if the missing data is above a 5% threshhold to determine whether to drop or impute the data*
+```{r}
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+apply(mydata,2,pMiss)
+```
+The variables are below the 5% threshold so we can keep them. As far as the samples are concerned, missing just one feature leads to a 25% missing data per sample. Samples that are missing 2 or more features (>50%), should be dropped if possible.
+
+```{r}
+library(VIM)
+aggr_plot <- aggr(mydata, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(mydata), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+```{r}
+library(mice)
+tempData <- mice(mydata,m=5,maxit=10,meth='pmm',seed=500)
+```
+*Checking the method of imputation used for each variable*
+
+```{r}
+tempData$meth
+is.na(tempData)
+```
+Due to the less cases of missing values we are using predictive mean matching as the imputation method.
+Checking to confirm for any missing values and there are none.
+
+```{r}
+clean.data <- complete(tempData,1)
+tail(clean.data)
+tail(mydata)
+```
+*Checking for outliers*
+
+
+```{r}
+#get the numeric columns
+num.col <- Filter(is.numeric, clean.data)
+for (i in 1:length(num.col)) {
+  boxplot(num.col[,i], main=names(num.col[i]), type="1")
+  print(i)
+}
+
+```
+
+#Perform Exploratory Data Analysis  (Univariate, Bivariate & Multivariate)
+
+```{r}
+desc_stats <- data.frame(
+  min = apply(num.col, 2, min),
+  median = apply(num.col, 2, median),
+  mean_df = apply(num.col, 2, mean),
+  SD = apply(num.col, 2, sd),
+  max = apply(num.col, 2, max)
+)
+desc_stats <- round(desc_stats,1)
+head(desc_stats)
+```
+Seeing how the different columns are on different scales we need to normalize the data
+
+```{r}
+num.col <- scale(num.col)
+head(desc_stats)
+```
+
+
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+ggplot(clean.data) + 
+  geom_bar(mapping = aes(x = VisitorType))
+```
+Returning visitors are the most frequent customers to the site. 
+
+```{r}
+month_frq <- table(clean.data$Month)
+barplot(sort(month_frq, decreasing = TRUE))
+```
+May and November registered the highest traffic to the site.
+
+*Bivariate analysis*
+
+```{r}
+ggplot(data = clean.data) +
+  geom_count(mapping = aes(x = Weekend, y = Revenue))
+```
+Most revenues are not generated during the weekend.
+
+```{r}
+ggplot(data = clean.data) +
+  geom_count(mapping = aes(x = Month, y = Revenue))
+```
+May, November, March, December registered the highest amount of revenue corresponding to the large traffic experienced in these months.
+
+```{r}
+ggplot(clean.data, aes(x = BounceRates, y = ExitRates)) +
+  geom_point() +
+  geom_smooth(method = 'lm', se = FALSE) +
+  theme_bw()
+```
+The exit and bounce rates show a positive correlation.
+```{r}
+ggplot(data = clean.data) +
+ geom_count(mapping = aes(y = SpecialDay, x = Month))
+```
+There are special days in the months with high traffic to the site hence the high revenue from these duration.
+
+```{r}
+ggplot(data = clean.data) +
+  geom_count(mapping = aes(x = VisitorType, y = Weekend))
+```
+During the weekends, there are no many returning visitors. but their number is higher than that of new visitors.
+
+
+```{r}
+ggplot(data = clean.data) +
+  geom_count(mapping = aes(x = TrafficType, y = Browser))
+```
+```{r}
+library(corrplot)
+corrplot(cor(num.col))
+```
+
+*Feature Selection*
+
+Some of the columns are ambiguous and hence difficult to understand. We can't really tell what the values represent. We'll drop them. like the browser, traffic type, administrative, informational etc. I know what the labels mean but not what the values represent. 
+
+These variables show high correlation so does the exit and bounce rates so I'll pick one.
+
+```{r}
+clean.data2 <- clean.data[c(2,4,6,8,9,11,16)]
+head(clean.data2)
+```
+#Implement the Solution
+
+##Hierarchical clustering
+
+I will construct 4 dendrograms and compare their metrics using the the cophenetic distances of the average clustering method. Complete linkage, Ward’s method and Agnes since they are generally preferred.
+
+Remember that revenue is our label and it has 2 options True or False so our clusters need to show us the same.
+```{r}
+# First we use the dist() function to compute the Euclidean distance between observations, 
+d <- dist(clean.data2, method = "euclidean")
+```
+
+*Average method*
+
+```{r}
+hc.av <- hclust(d, method = "average")
+
+# plot the obtained dendrogram
+plot(hc.av, cex = 0.6, hang = -1)
+rect.hclust(hc.av , k = 2, border = 2:6)
+abline(h = 2, col = 'red')
+
+coph.av <- cor(d, cophenetic(hc.av))
+coph.av
+```
+
+*Wards Method*
+```{r}
+hc.wd2 <- hclust(d, method = "ward.D2" )
+
+# Lastly, we plot the obtained dendrogram
+plot(hc.wd2, cex = 0.6, hang = -1)
+rect.hclust(hc.wd2 , k = 2, border = 2:6)
+abline(h = 2, col = 'red')
+
+coph.wd2 <- cor(d, cophenetic(hc.wd2))
+coph.wd2
+```
+*Complete method*
+
+```{r}
+hc.comp <- hclust(d, method = "complete" )
+
+# Lastly, we plot the obtained dendrogram
+plot(hc.comp, cex = 0.6, hang = -1)
+rect.hclust(hc.comp , k = 2, border = 2:6)
+abline(h = 2, col = 'red')
+
+coph.comp <- cor(d, cophenetic(hc.comp))
+coph.comp
+```
+
+Using Agnes function**
+```{r}
+library("cluster")
+res.agnes <- agnes(x = clean.data2, # data matrix
+                   stand = TRUE, # Standardize the data
+                   metric = "euclidean", # metric for distance matrix
+                   method = "average" # Linkage method
+                   )
+coph.res.agnes <- cophenetic(res.agnes)
+coph.agnes <- cor(d, coph.res.agnes)
+```
+
+
+#Challenge the Solution
+
+*Using K-Means*
+```{r}
+suppressPackageStartupMessages(library("factoextra"))
+library(cluster)
+library(dplyr)
+
+num.col2 <- Filter(is.numeric, clean.data2)
+data.k <- kmeans(na.omit(num.col2), 2, 10)
+print(data.k)
+fviz_cluster(data.k, data = num.col2)
+
+```
+
+*Determining Optimal clusters (k) Using Elbow method*
+```{r}
+#fviz_nbclust(x = num.col2,FUNcluster = kmeans, method = 'wss' )
+```
+
+*Determining Optimal clusters (k) Using Average Silhouette Method*
+```{r}
+#fviz_nbclust(x = num.col2,FUNcluster = kmeans, method = 'silhouette' )
+```
+
+#Conclusion
+Using the 2 clustering methods we found that implementing kmeans gives us a better visualization of the clusters compared to the hierarchical clustering method. The elbow and Silhoutte methods confirm our optimal clustersto be 2. 
+
+#Follow up Questions
+
+We need more information about what the values in lthe respective columns represent. Due to low computational power we could not dig further inside the clusters to get bet insights of our analysis. 
+
+
+
+
